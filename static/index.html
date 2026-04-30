@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>P21 Schema Tracker</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>P21 Schema Tracker</h1>
+      <p class="subtitle">Track Prophet 21 table names and their columns.</p>
+    </header>
+
+    <!-- Table lookup section -->
+    <section class="card" id="lookup-section">
+      <h2>Look Up / Create Table</h2>
+      <div class="input-row">
+        <input
+          type="text"
+          id="table-name-input"
+          placeholder="e.g. p21_view_po_hdr"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button id="load-btn" class="btn btn-primary">Load Table</button>
+      </div>
+    </section>
+
+    <!-- Table status / column list -->
+    <section class="card" id="table-info-section" style="display:none;">
+      <div class="section-header">
+        <h2 id="table-title"></h2>
+        <span id="table-badge" class="badge"></span>
+      </div>
+
+      <div id="column-list-wrapper">
+        <h3>Columns <span id="column-count" class="count-badge"></span></h3>
+        <ul id="column-list" class="column-list"></ul>
+        <p id="no-columns-msg" class="muted" style="display:none;">No columns stored yet.</p>
+      </div>
+    </section>
+
+    <!-- Add columns section -->
+    <section class="card" id="add-columns-section" style="display:none;">
+      <h2>Add Columns</h2>
+      <label for="columns-input">
+        Paste column names — one per line <strong>or</strong> comma-separated:
+      </label>
+      <textarea
+        id="columns-input"
+        rows="6"
+        placeholder="po_no&#10;supplier_id&#10;order_date"
+        spellcheck="false"
+      ></textarea>
+      <div class="button-row">
+        <button id="save-btn" class="btn btn-success">Save Columns</button>
+        <button id="clear-btn" class="btn btn-secondary">Clear</button>
+      </div>
+      <div id="message-area"></div>
+    </section>
+
+    <!-- All tables section -->
+    <section class="card" id="all-tables-section">
+      <div class="section-header">
+        <h2>All Tracked Tables</h2>
+        <button id="refresh-all-btn" class="btn btn-secondary btn-sm">↻ Refresh</button>
+      </div>
+      <div id="all-tables-list"></div>
+    </section>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
