@@ -13,6 +13,33 @@
       <p class="subtitle">Track Prophet 21 table names and their columns.</p>
     </header>
 
+    <!-- Report Name section -->
+    <section class="card" id="report-section">
+      <h2>Report Name</h2>
+      <p class="section-hint">Select an existing report or type a new name. A report name is required before saving any data.</p>
+      <div class="input-row">
+        <input
+          type="text"
+          id="report-name-input"
+          list="report-suggestions"
+          placeholder="e.g. Open Purchase Order Report"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <datalist id="report-suggestions"></datalist>
+        <button id="load-report-btn" class="btn btn-primary">Load Report</button>
+      </div>
+      <div id="report-message-area"></div>
+    </section>
+
+    <!-- Current Report Usage section -->
+    <section class="card" id="report-usage-section" style="display:none;">
+      <div class="section-header">
+        <h2 id="report-usage-title">Report Usage</h2>
+      </div>
+      <div id="report-usage-list"></div>
+    </section>
+
     <!-- Table lookup section -->
     <section class="card" id="lookup-section">
       <h2>Look Up / Create Table</h2>
@@ -59,6 +86,30 @@
         <button id="clear-btn" class="btn btn-secondary">Clear</button>
       </div>
       <div id="message-area"></div>
+    </section>
+
+    <!-- Bulk SQL Upload and Parse section -->
+    <section class="card" id="bulk-sql-section">
+      <h2>Bulk SQL Upload and Parse</h2>
+      <label for="sql-input">
+        Paste raw SQL (views, queries, functions) — tables starting with
+        <code>p21_view_</code> or <code>p21s_</code> will be extracted:
+      </label>
+      <textarea
+        id="sql-input"
+        rows="10"
+        placeholder="SELECT ph.po_no, pl.line_no&#10;FROM p21_view_po_hdr ph&#10;JOIN p21_view_po_line pl ON ph.po_no = pl.po_no"
+        spellcheck="false"
+      ></textarea>
+      <div class="button-row">
+        <button id="parse-btn" class="btn btn-primary">Parse and Load</button>
+        <button id="clear-sql-btn" class="btn btn-secondary">Clear</button>
+      </div>
+      <div id="parse-message-area"></div>
+      <div id="parse-results" style="display:none;">
+        <h3 style="margin-top:1rem;">Parse Results</h3>
+        <div id="parse-results-list"></div>
+      </div>
     </section>
 
     <!-- All tables section -->

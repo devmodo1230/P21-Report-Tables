@@ -2,10 +2,13 @@
  * P21 Schema Tracker – Frontend Logic
  *
  * Talks to the FastAPI backend:
+ *   GET  /api/reports
+ *   GET  /api/reports/{report_name}
+ *   GET  /api/tables
  *   GET  /api/tables/{table_name}
  *   POST /api/tables
  *   POST /api/tables/{table_name}/columns/bulk
- *   GET  /api/tables
+ *   POST /api/parse-sql
  */
 
 "use strict";
@@ -13,6 +16,14 @@
 // ---------------------------------------------------------------------------
 // DOM references
 // ---------------------------------------------------------------------------
+const reportNameInput    = document.getElementById("report-name-input");
+const reportSuggestions  = document.getElementById("report-suggestions");
+const loadReportBtn      = document.getElementById("load-report-btn");
+const reportMessageArea  = document.getElementById("report-message-area");
+const reportUsageSection = document.getElementById("report-usage-section");
+const reportUsageTitle   = document.getElementById("report-usage-title");
+const reportUsageList    = document.getElementById("report-usage-list");
+
 const tableNameInput    = document.getElementById("table-name-input");
 const loadBtn           = document.getElementById("load-btn");
 
@@ -32,10 +43,18 @@ const messageArea       = document.getElementById("message-area");
 const allTablesList     = document.getElementById("all-tables-list");
 const refreshAllBtn     = document.getElementById("refresh-all-btn");
 
+const sqlInput          = document.getElementById("sql-input");
+const parseBtn          = document.getElementById("parse-btn");
+const clearSqlBtn       = document.getElementById("clear-sql-btn");
+const parseMessageArea  = document.getElementById("parse-message-area");
+const parseResults      = document.getElementById("parse-results");
+const parseResultsList  = document.getElementById("parse-results-list");
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-let currentTableName = null; // the table currently being viewed/edited
+let currentReportName = "";
+let currentTableName  = null;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -49,10 +68,16 @@ function parseColumns(raw) {
     .filter(s => s.length > 0);
 }
 
-/** Show a temporary success or error message. */
+/** Show a temporary message in the column-add message area. */
 function showMessage(text, type = "success") {
   messageArea.innerHTML = `<div class="msg-${type}">${escapeHtml(text)}</div>`;
   setTimeout(() => { messageArea.innerHTML = ""; }, 5000);
+}
+
+/** Show a temporary message in the parse message area. */
+function showParseMessage(text, type = "success") {
+  parseMessageArea.innerHTML = `<div class="msg-${type}">${escapeHtml(text)}</div>`;
+  setTimeout(() => { parseMessageArea.innerHTML = ""; }, 6000);
 }
 
 /** Minimal HTML escape to prevent XSS. */
@@ -64,25 +89,47 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
+/** Enable/disable write buttons based on whether a report name is set. */
+function updateButtonStates() {
+  const hasReport = currentReportName.length > 0;
+  saveBtn.disabled  = !hasReport;
+  parseBtn.disabled = !hasReport;
+}
+
 // ---------------------------------------------------------------------------
 // Render helpers
 // ---------------------------------------------------------------------------
 
-/** Render the column list for the currently selected table. */
+/**
+ * Render the column list for the currently selected table.
+ * Accepts columns as either plain strings or {column_name, reports: [...]} objects.
+ */
 function renderColumnList(columns) {
   columnList.innerHTML = "";
   columnCount.textContent = columns.length;
 
   if (columns.length === 0) {
     noColumnsMsg.style.display = "block";
-  } else {
-    noColumnsMsg.style.display = "none";
-    columns.forEach(col => {
-      const li = document.createElement("li");
-      li.textContent = col;
-      columnList.appendChild(li);
-    });
+    return;
   }
+
+  noColumnsMsg.style.display = "none";
+  columns.forEach(col => {
+    const colName   = typeof col === "string" ? col : col.column_name;
+    const colReports = (typeof col === "object" && col.reports) ? col.reports : [];
+
+    const li = document.createElement("li");
+    li.textContent = colName;
+
+    if (colReports.length > 0) {
+      const tag = document.createElement("span");
+      tag.className   = "col-report-tags";
+      tag.textContent = colReports.join(", ");
+      li.appendChild(tag);
+    }
+
+    columnList.appendChild(li);
+  });
 }
 
 /** Render the "All Tracked Tables" section. */
@@ -105,40 +152,168 @@ function renderAllTables(tables) {
 
     const colsEl = document.createElement("div");
     colsEl.className = "table-item-cols";
-    if (tbl.columns.length === 0) {
+
+    if (!tbl.columns || tbl.columns.length === 0) {
       colsEl.innerHTML = '<span style="color:#888;border:none;background:none;">—</span>';
     } else {
+      tbl.columns.forEach(col => {
+        const span = document.createElement("span");
+        span.textContent = typeof col === "string" ? col : col.column_name;
+        colsEl.appendChild(span);
+      });
+    }
+    div.appendChild(colsEl);
+    allTablesList.appendChild(div);
+  });
+}
+
+/** Render the Current Report Usage section. */
+function renderReportUsage(report) {
+  reportUsageTitle.textContent = `Report: ${report.report_name}`;
+  reportUsageList.innerHTML = "";
+
+  if (!report.tables || report.tables.length === 0) {
+    reportUsageList.innerHTML = '<p class="no-tables-msg">No tables linked to this report yet.</p>';
+    reportUsageSection.style.display = "block";
+    return;
+  }
+
+  report.tables.forEach(tbl => {
+    const div = document.createElement("div");
+    div.className = "report-usage-item";
+
+    const nameEl = document.createElement("div");
+    nameEl.className = "report-usage-table-name";
+    nameEl.textContent = tbl.table_name;
+    div.appendChild(nameEl);
+
+    if (tbl.columns && tbl.columns.length > 0) {
+      const colsEl = document.createElement("div");
+      colsEl.className = "table-item-cols";
       tbl.columns.forEach(col => {
         const span = document.createElement("span");
         span.textContent = col;
         colsEl.appendChild(span);
       });
+      div.appendChild(colsEl);
+    } else {
+      const none = document.createElement("p");
+      none.className = "muted";
+      none.style.marginTop = "0.3rem";
+      none.textContent = "No columns tracked for this report.";
+      div.appendChild(none);
     }
-    div.appendChild(colsEl);
 
-    allTablesList.appendChild(div);
+    reportUsageList.appendChild(div);
   });
+
+  reportUsageSection.style.display = "block";
+}
+
+/** Render the parse results panel. */
+function renderParseResults(data) {
+  parseResultsList.innerHTML = "";
+
+  if (data.warnings && data.warnings.length > 0) {
+    const warnDiv = document.createElement("div");
+    warnDiv.className = "parse-warnings";
+    warnDiv.innerHTML = `<strong>Warnings (${data.warnings.length})</strong>`;
+    const ul = document.createElement("ul");
+    data.warnings.forEach(w => {
+      const li = document.createElement("li");
+      li.textContent = w;
+      ul.appendChild(li);
+    });
+    warnDiv.appendChild(ul);
+    parseResultsList.appendChild(warnDiv);
+  }
+
+  if (!data.tables || data.tables.length === 0) {
+    parseResultsList.innerHTML += '<p class="no-tables-msg">No p21 tables found in the provided SQL.</p>';
+    parseResults.style.display = "block";
+    return;
+  }
+
+  data.tables.forEach(tbl => {
+    const div = document.createElement("div");
+    div.className = "parse-table-item";
+
+    const header = document.createElement("div");
+    header.className = "parse-table-header";
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "parse-table-name";
+    nameEl.textContent = tbl.table_name;
+    header.appendChild(nameEl);
+
+    const aliasEl = document.createElement("span");
+    aliasEl.className = "parse-alias-badge";
+    aliasEl.textContent = `alias: ${tbl.alias}`;
+    header.appendChild(aliasEl);
+
+    const colCountEl = document.createElement("span");
+    colCountEl.className = "count-badge";
+    colCountEl.textContent = `${tbl.columns.length} col${tbl.columns.length !== 1 ? "s" : ""}`;
+    header.appendChild(colCountEl);
+
+    div.appendChild(header);
+
+    if (tbl.columns.length > 0) {
+      const colsEl = document.createElement("div");
+      colsEl.className = "parse-columns";
+      tbl.columns.forEach(col => {
+        const span = document.createElement("span");
+        span.textContent = col;
+        colsEl.appendChild(span);
+      });
+      div.appendChild(colsEl);
+    } else {
+      const none = document.createElement("p");
+      none.className = "muted";
+      none.style.marginTop = "0.3rem";
+      none.textContent = "No column references detected.";
+      div.appendChild(none);
+    }
+
+    parseResultsList.appendChild(div);
+  });
+
+  parseResults.style.display = "block";
 }
 
 // ---------------------------------------------------------------------------
 // API calls
 // ---------------------------------------------------------------------------
 
-/** Load a table by name (GET /api/tables/{table_name}). */
-async function loadTable(tableName) {
-  const res = await fetch(`/api/tables/${encodeURIComponent(tableName)}`);
-  if (!res.ok) {
-    throw new Error(`Server error: ${res.status}`);
-  }
+/** GET /api/reports — returns { reports: [...] } */
+async function fetchAllReports() {
+  const res = await fetch("/api/reports");
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  const data = await res.json();
+  return data.reports || [];
+}
+
+/** GET /api/reports/{report_name} — returns report detail or null on 404 */
+async function fetchReportByName(reportName) {
+  const res = await fetch(`/api/reports/${encodeURIComponent(reportName)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
   return res.json();
 }
 
-/** Create or fetch a table (POST /api/tables). */
+/** GET /api/tables/{table_name} */
+async function loadTable(tableName) {
+  const res = await fetch(`/api/tables/${encodeURIComponent(tableName)}`);
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  return res.json();
+}
+
+/** POST /api/tables — create or retrieve table, link to current report */
 async function ensureTable(tableName) {
   const res = await fetch("/api/tables", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ table_name: tableName }),
+    body: JSON.stringify({ report_name: currentReportName, table_name: tableName }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -147,12 +322,12 @@ async function ensureTable(tableName) {
   return res.json();
 }
 
-/** Bulk-add columns (POST /api/tables/{table_name}/columns/bulk). */
+/** POST /api/tables/{table_name}/columns/bulk */
 async function saveColumns(tableName, columns) {
   const res = await fetch(`/api/tables/${encodeURIComponent(tableName)}/columns/bulk`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ columns }),
+    body: JSON.stringify({ report_name: currentReportName, columns }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -161,7 +336,7 @@ async function saveColumns(tableName, columns) {
   return res.json();
 }
 
-/** Fetch all tables (GET /api/tables). */
+/** GET /api/tables */
 async function fetchAllTables() {
   const res = await fetch("/api/tables");
   if (!res.ok) throw new Error(`Server error: ${res.status}`);
@@ -169,9 +344,71 @@ async function fetchAllTables() {
   return data.tables || [];
 }
 
+/** POST /api/parse-sql — parses and persists in one call */
+async function parseSqlApi(reportName, sql) {
+  const res = await fetch("/api/parse-sql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ report_name: reportName, sql }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Server error: ${res.status}`);
+  }
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Event handlers
 // ---------------------------------------------------------------------------
+
+/** Report name input: update state and button availability on every keystroke. */
+reportNameInput.addEventListener("input", () => {
+  currentReportName = reportNameInput.value.trim();
+  updateButtonStates();
+  if (!currentReportName) {
+    reportUsageSection.style.display = "none";
+  }
+});
+
+/** "Load Report" button. */
+loadReportBtn.addEventListener("click", async () => {
+  const reportName = reportNameInput.value.trim();
+  if (!reportName) {
+    reportMessageArea.innerHTML = '<div class="msg-error">Please enter a report name.</div>';
+    return;
+  }
+
+  currentReportName = reportName;
+  updateButtonStates();
+
+  loadReportBtn.disabled  = true;
+  loadReportBtn.textContent = "Loading…";
+  reportMessageArea.innerHTML = "";
+
+  try {
+    const report = await fetchReportByName(reportName);
+    if (report) {
+      renderReportUsage(report);
+    } else {
+      reportUsageTitle.textContent = `Report: ${reportName}`;
+      reportUsageList.innerHTML    = '<p class="no-tables-msg">New report — no data saved yet.</p>';
+      reportUsageSection.style.display = "block";
+    }
+    // Refresh datalist in case this is a new report name
+    const reports = await fetchAllReports();
+    populateReportSuggestions(reports);
+  } catch (err) {
+    reportMessageArea.innerHTML = `<div class="msg-error">${escapeHtml(err.message)}</div>`;
+  } finally {
+    loadReportBtn.disabled    = false;
+    loadReportBtn.textContent = "Load Report";
+  }
+});
+
+reportNameInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") loadReportBtn.click();
+});
 
 /** "Load Table" button. */
 loadBtn.addEventListener("click", async () => {
@@ -181,86 +418,88 @@ loadBtn.addEventListener("click", async () => {
     return;
   }
 
-  loadBtn.disabled = true;
+  loadBtn.disabled  = true;
   loadBtn.textContent = "Loading…";
 
   try {
     const data = await loadTable(tableName);
     currentTableName = data.table_name || tableName;
 
-    // Show table info section
-    tableInfoSection.style.display = "block";
+    tableInfoSection.style.display  = "block";
     addColumnsSection.style.display = "block";
     tableTitle.textContent = currentTableName;
 
     if (data.exists) {
       tableBadge.textContent = "Existing Table";
-      tableBadge.className = "badge badge-existing";
+      tableBadge.className   = "badge badge-existing";
     } else {
       tableBadge.textContent = "New Table";
-      tableBadge.className = "badge badge-new";
+      tableBadge.className   = "badge badge-new";
     }
 
     renderColumnList(data.columns || []);
     messageArea.innerHTML = "";
   } catch (err) {
-    showMessage(err.message, "error");
+    alert(err.message);
   } finally {
-    loadBtn.disabled = false;
+    loadBtn.disabled  = false;
     loadBtn.textContent = "Load Table";
   }
 });
 
-/** Allow pressing Enter in the table name input to trigger Load. */
 tableNameInput.addEventListener("keydown", e => {
   if (e.key === "Enter") loadBtn.click();
 });
 
 /** "Save Columns" button. */
 saveBtn.addEventListener("click", async () => {
-  const columns = parseColumns(columnsInput.value);
+  if (!currentReportName) {
+    showMessage("Report name is required before saving table or column usage.", "error");
+    return;
+  }
 
+  const columns = parseColumns(columnsInput.value);
   if (columns.length === 0) {
     showMessage("Please enter at least one column name.", "error");
     return;
   }
 
   if (!currentTableName) {
-    showMessage("No table selected. Use "Load Table" first.", "error");
+    showMessage("No table selected. Use 'Load Table' first.", "error");
     return;
   }
 
-  saveBtn.disabled = true;
+  saveBtn.disabled  = true;
   saveBtn.textContent = "Saving…";
 
   try {
-    // Ensure the table exists before adding columns
-    await ensureTable(currentTableName);
-
-    // Bulk-add columns
     const data = await saveColumns(currentTableName, columns);
 
-    // Update the badge to "Existing" after first save
     tableBadge.textContent = "Existing Table";
-    tableBadge.className = "badge badge-existing";
-
-    // Refresh column list
+    tableBadge.className   = "badge badge-existing";
     renderColumnList(data.columns || []);
     columnsInput.value = "";
-    showMessage(`Saved ${columns.length} column(s) to "${currentTableName}".`, "success");
+    showMessage(
+      `Saved ${columns.length} column(s) to "${currentTableName}" under "${currentReportName}".`,
+      "success"
+    );
 
-    // Also refresh the all-tables list
-    const allTables = await fetchAllTables();
+    // Refresh all-tables and report usage panels
+    const [allTables, report] = await Promise.all([
+      fetchAllTables(),
+      fetchReportByName(currentReportName),
+    ]);
     renderAllTables(allTables);
+    if (report) renderReportUsage(report);
   } catch (err) {
     showMessage(err.message, "error");
   } finally {
-    saveBtn.disabled = false;
+    saveBtn.disabled  = !currentReportName;
     saveBtn.textContent = "Save Columns";
   }
 });
 
-/** "Clear" button for the textarea. */
+/** "Clear" button for the columns textarea. */
 clearBtn.addEventListener("click", () => {
   columnsInput.value = "";
   messageArea.innerHTML = "";
@@ -279,14 +518,88 @@ refreshAllBtn.addEventListener("click", async () => {
   }
 });
 
+/** "Parse and Load" button. */
+parseBtn.addEventListener("click", async () => {
+  if (!currentReportName) {
+    showParseMessage("Report name is required before parsing and saving SQL.", "error");
+    return;
+  }
+
+  const sql = sqlInput.value.trim();
+  if (!sql) {
+    showParseMessage("Please paste some SQL before parsing.", "error");
+    return;
+  }
+
+  parseBtn.disabled   = true;
+  parseBtn.textContent = "Parsing…";
+  parseMessageArea.innerHTML = "";
+  parseResults.style.display = "none";
+
+  try {
+    const data = await parseSqlApi(currentReportName, sql);
+    renderParseResults(data);
+
+    if (!data.tables || data.tables.length === 0) {
+      showParseMessage("Parsing complete — no p21 tables found to save.", "error");
+    } else {
+      showParseMessage(
+        `Parsed and saved ${data.tables.length} table(s) under "${currentReportName}".`,
+        "success"
+      );
+      // Refresh all-tables and report usage panels
+      const [allTables, report] = await Promise.all([
+        fetchAllTables(),
+        fetchReportByName(currentReportName),
+      ]);
+      renderAllTables(allTables);
+      if (report) renderReportUsage(report);
+    }
+  } catch (err) {
+    showParseMessage(err.message, "error");
+  } finally {
+    parseBtn.disabled   = !currentReportName;
+    parseBtn.textContent = "Parse and Load";
+  }
+});
+
+/** "Clear" button for the SQL textarea. */
+clearSqlBtn.addEventListener("click", () => {
+  sqlInput.value = "";
+  parseMessageArea.innerHTML = "";
+  parseResults.style.display = "none";
+});
+
 // ---------------------------------------------------------------------------
-// Init: load all tables on page load
+// Helpers
+// ---------------------------------------------------------------------------
+
+function populateReportSuggestions(reports) {
+  reportSuggestions.innerHTML = "";
+  reports.forEach(r => {
+    const option = document.createElement("option");
+    option.value = r.report_name;
+    reportSuggestions.appendChild(option);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Init: load reports + tables on page load
 // ---------------------------------------------------------------------------
 (async function init() {
+  try {
+    const reports = await fetchAllReports();
+    populateReportSuggestions(reports);
+  } catch (err) {
+    console.error("Failed to load reports on init:", err);
+  }
+
   try {
     const tables = await fetchAllTables();
     renderAllTables(tables);
   } catch (err) {
     console.error("Failed to load tables on init:", err);
   }
+
+  updateButtonStates();
 })();
