@@ -267,6 +267,19 @@ def get_or_create_table(conn: sqlite3.Connection, table_name: str) -> dict:
     return {"id": row["id"], "table_name": row["table_name"], "created_at": row["created_at"]}
 
 
+def delete_table_by_name(conn: sqlite3.Connection, table_name: str) -> bool:
+    """
+    Delete a table by name (case-insensitive). Returns True if a row was deleted, False otherwise.
+    Due to foreign key constraints, this will also delete all associated columns and usage links.
+    """
+    table = get_table_by_name(conn, table_name)
+    if table is None:
+        return False
+    
+    conn.execute("DELETE FROM p21_tables WHERE id = ?", (table["id"],))
+    return True
+
+
 def upsert_table(conn: sqlite3.Connection, table_name: str) -> dict:
     """Backward-compat alias for get_or_create_table."""
     return get_or_create_table(conn, table_name)

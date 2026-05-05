@@ -25,7 +25,7 @@ import re
 # Group 2: table name
 # Group 3: alias (optional; may be a reserved word — handled below)
 TABLE_PATTERN = re.compile(
-    r'\b(FROM|JOIN)\s+(p21_view_\w+|p21s_\w+)(?:\s+(?:AS\s+)?(\w+))?',
+    r'\b(FROM|JOIN)\s+(p21_view_\w+|p21s_\w+|is_\w+)(?:\s+(?:AS\s+)?(\w+))?',
     re.IGNORECASE,
 )
 
@@ -56,8 +56,8 @@ def extract_tables_and_aliases(sql: str) -> tuple[dict[str, str], list[str]]:
     Scan SQL for FROM/JOIN references to p21_view_* or p21s_* tables.
 
     Returns:
-        alias_map  – {alias_or_table_name: table_name}
-        warnings   – human-readable issues found during parsing
+        alias_map  - {alias_or_table_name: table_name}
+        warnings   - human-readable issues found during parsing
     """
     warnings: list[str] = []
     alias_map: dict[str, str] = {}
@@ -99,8 +99,8 @@ def extract_columns(
     Scan SQL for alias.column_name patterns and map them to tables.
 
     Returns:
-        column_map – {table_name: set of column names}
-        warnings   – human-readable issues found during parsing
+        column_map - {table_name: set of column names}
+        warnings   - human-readable issues found during parsing
     """
     warnings: list[str] = []
     column_map: dict[str, set[str]] = {tbl: set() for tbl in alias_map.values()}
@@ -166,8 +166,8 @@ def parse_sql(sql: str) -> tuple[list[dict], list[str]]:
     Parse raw SQL and return extracted table/column data plus warnings.
 
     Returns:
-        tables   – list of {table_name, alias, columns} dicts
-        warnings – list of warning strings
+        tables   - list of {table_name, alias, columns} dicts
+        warnings - list of warning strings
     """
     all_warnings: list[str] = []
 

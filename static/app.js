@@ -25,7 +25,9 @@ const reportUsageTitle   = document.getElementById("report-usage-title");
 const reportUsageList    = document.getElementById("report-usage-list");
 
 const tableNameInput    = document.getElementById("table-name-input");
+const tablePicker       = document.getElementById("table-picker");
 const loadBtn           = document.getElementById("load-btn");
+const deleteBtn         = document.getElementById("delete-btn");
 
 const tableInfoSection  = document.getElementById("table-info-section");
 const tableTitle        = document.getElementById("table-title");
@@ -49,6 +51,8 @@ const clearSqlBtn       = document.getElementById("clear-sql-btn");
 const parseMessageArea  = document.getElementById("parse-message-area");
 const parseResults      = document.getElementById("parse-results");
 const parseResultsList  = document.getElementById("parse-results-list");
+
+let currentTableList  = [];
 
 // ---------------------------------------------------------------------------
 // State
@@ -134,6 +138,7 @@ function renderColumnList(columns) {
 
 /** Render the "All Tracked Tables" section. */
 function renderAllTables(tables) {
+  currentTableList = tables || [];
   allTablesList.innerHTML = "";
 
   if (!tables || tables.length === 0) {
@@ -308,6 +313,12 @@ async function loadTable(tableName) {
   return res.json();
 }
 
+async function deleteTable(tableName) {
+  const res = await fetch(`/api/tables/delete/${encodeURIComponent(tableName)}`);
+  if (!res.ok) throw new Error(err.detail || `Server error: ${res.status}`);
+  return res.json();
+}
+
 /** POST /api/tables — create or retrieve table, link to current report */
 async function ensureTable(tableName) {
   const res = await fetch("/api/tables", {
@@ -423,6 +434,7 @@ loadBtn.addEventListener("click", async () => {
 
   try {
     const data = await loadTable(tableName);
+    tablePicker.hidden = true;
     currentTableName = data.table_name || tableName;
 
     tableInfoSection.style.display  = "block";
@@ -447,8 +459,52 @@ loadBtn.addEventListener("click", async () => {
   }
 });
 
+deleteBtn.addEventListener("click", async () => {
+  const tableName = tableNameInput.value.trim();
+  if (!tableName) {
+    alert("Please enter a table name before deletion");
+    return;
+  }
+
+  deleteBtn.disabled = true;
+  deleteBtn.textContent = "Loading...";
+
+  try {
+    const data = await deleteTable(tableName);
+    alert(`Table "${tableName}" deleted successfully.`);
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    deleteBtn.disabled = false;
+    deleteBtn.textContent = "Delete Table";
+  }
+});
+
 tableNameInput.addEventListener("keydown", e => {
   if (e.key === "Enter") loadBtn.click();
+});
+
+tableNameInput.addEventListener("focus", () => {
+  tablePicker.hidden = false;
+  positionTablePicker();
+  populateTablePicker(currentTableList);
+});
+
+tableNameInput.addEventListener("input", () => {
+  tablePicker.hidden = false;
+  // TODO: filter table picker options based on input value
+  positionTablePicker();
+});
+
+window.addEventListener("resize", positionTablePicker);
+window.addEventListener("scroll", positionTablePicker, true)
+
+tablePicker.addEventListener("mousedown", (e) => {
+  const item =  e.target.closest(".item");
+  if (!item) return;
+
+  tableNameInput.value = item.textContent;
+  tablePicker.hidden = true;
 });
 
 /** "Save Columns" button. */
@@ -580,7 +636,26 @@ function populateReportSuggestions(reports) {
     const option = document.createElement("option");
     option.value = r.report_name;
     reportSuggestions.appendChild(option);
+  }); 
+} 
+
+function populateTablePicker(tables) {
+  tablePicker.innerHTML = "";
+  tables.forEach(t => {
+    const option = document.createElement("option");
+    option.value = t.table_name;
+    option.classList.add("item");
+    option.textContent = t.table_name;
+    tablePicker.appendChild(option);
   });
+}
+
+function positionTablePicker() {
+  const rect = tableNameInput.getBoundingClientRect();
+
+  tablePicker.style.left  = `${rect.left}px`;
+  tablePicker.style.top   = `${rect.bottom + 4}px`;
+  tablePicker.style.width = `${rect.width}px`;
 }
 
 // ---------------------------------------------------------------------------
@@ -597,6 +672,7 @@ function populateReportSuggestions(reports) {
   try {
     const tables = await fetchAllTables();
     renderAllTables(tables);
+    populateTablePicker(tables);
   } catch (err) {
     console.error("Failed to load tables on init:", err);
   }

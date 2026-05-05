@@ -123,6 +123,7 @@ textarea {
 .btn-primary   { background: #0f3460; color: #fff; }
 .btn-success   { background: #16a34a; color: #fff; }
 .btn-secondary { background: #e2e8f0; color: #1a1a2e; }
+.btn-error     { background: #b10909; color: #fff; }
 
 .btn-sm {
   padding: 0.3rem 0.75rem;
@@ -222,6 +223,26 @@ textarea {
 }
 
 /* ---- All-tables list ---- */
+.table-picker {
+  position: fixed;
+  z-index: 9999;
+  background: #e2e8f0;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.15);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.table-picker .item {
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.table-picker .item:hover {
+  background: #f3f4f6;
+}
+
 .table-item {
   border: 1px solid #e2e8f0;
   border-radius: 8px;

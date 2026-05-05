@@ -17,7 +17,7 @@ from database import (
     get_all_tables, get_table_by_name,
     get_or_create_report, get_or_create_table, get_or_create_column,
     link_report_to_table, link_report_to_column,
-    get_all_reports, get_report_by_name,
+    get_all_reports, get_report_by_name, delete_table_by_name
 )
 from schemas import BulkColumnCreate, ColumnCreate, TableCreate, ParseSqlRequest
 from sql_parser import parse_sql
@@ -97,6 +97,21 @@ def get_table(table_name: str):
         })
 
     return JSONResponse(content={"exists": True, **table})
+
+@app.get("/api/tables/delete/{table_name}")
+def delete_table(table_name: str):
+    """
+    Delete a table by name. This is a simple GET endpoint for testing purposes.
+    In production, you would want to use a proper DELETE method with auth.
+    """
+    table_name = table_name.strip()
+    if not table_name:
+        raise HTTPException(status_code=400, detail="table_name must not be empty")
+
+    with get_connection() as conn:
+        delete_table_by_name(conn, table_name)
+
+    return JSONResponse(content={"message": f"Table '{table_name}' and its links have been deleted."})
 
 
 @app.post("/api/tables", status_code=201)
